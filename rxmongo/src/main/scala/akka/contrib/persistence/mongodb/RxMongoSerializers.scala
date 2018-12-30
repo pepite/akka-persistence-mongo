@@ -76,7 +76,7 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
         case b: BSONDocument =>
           b
         case _ =>
-          Serialization.withTransportInformation(serialization.system) { () =>
+          SerializationHelper.withTransportInformation(serialization.system) {
             BSON.write(serialization.serialize(Snapshot(snap.snapshot)).get)
           }
       }

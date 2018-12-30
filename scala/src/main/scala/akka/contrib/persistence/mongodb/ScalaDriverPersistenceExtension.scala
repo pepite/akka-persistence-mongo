@@ -99,6 +99,16 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
 
   private[mongodb] def snapshotCollectionsAsFuture(implicit ec: ExecutionContext) = getCollectionsAsFuture(snapsCollectionName)
 
+  private[mongodb] override def ensureCollection(name: String): Future[MongoCollection[D]] = {
+    implicit val ec: ExecutionContext = system.dispatcher
+//    val x = for {
+//      //a <- db.createCollection(name)
+//      c <- collection(name)
+//    } yield c
+//    x
+    collection(name)
+  }
+
   override private[mongodb] def ensureIndex(indexName: String, unique: Boolean, sparse: Boolean, fields: (String, Int)*)(implicit ec: ExecutionContext): C => C = { collection =>
     for {
       c <- collection

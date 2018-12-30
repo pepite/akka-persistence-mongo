@@ -32,7 +32,7 @@ object CasbahPersistenceSnapshotter {
       case o: DBObject =>
         obj.put(V2.SERIALIZED, o)
       case _ =>
-        Serialization.withTransportInformation(serialization.system) { () =>
+        SerializationHelper.withTransportInformation(serialization.system) {
           obj.put(V2.SERIALIZED, serialization.serializerFor(classOf[Snapshot]).toBinary(Snapshot(snapshot.snapshot)))
         }
     }
