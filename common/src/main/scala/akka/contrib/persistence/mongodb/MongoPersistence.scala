@@ -187,7 +187,9 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
   private[mongodb] lazy val indexes: Seq[IndexSettings] = Seq(
     IndexSettings(journalIndexName, unique = true, sparse = false, JournallingFieldNames.PROCESSOR_ID -> 1, FROM -> 1, TO -> 1),
     IndexSettings(journalSeqNrIndexName, unique = false, sparse = false, JournallingFieldNames.PROCESSOR_ID -> 1, TO -> -1),
-    IndexSettings(journalTagIndexName, unique = false, sparse = true, TAGS -> 1)
+    IndexSettings(journalTagIndexName, unique = false, sparse = true, TAGS -> 1),
+    IndexSettings(journalTimestampIndexName, unique = false, sparse = true, TS -> 1),
+    IndexSettings(journalPIDIndexName, unique = false, sparse = true, TS -> 1)
   )
 
   private[mongodb] lazy val journal: C = journal("")
@@ -222,7 +224,12 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
   }
 
   private[mongodb] lazy val realtime: C = {
-    cappedCollection(realtimeCollectionName)(concurrent.ExecutionContext.global)
+    val realtimeCollection = cappedCollection(realtimeCollectionName)(concurrent.ExecutionContext.global)
+
+    indexes.foldLeft(realtimeCollection) { (acc, index) =>
+      import index._
+      ensureIndex(name, unique, sparse, fields: _*)(concurrent.ExecutionContext.global)(acc)
+    }
   }
 
   private[mongodb] val querySideDispatcher = actorSystem.dispatchers.lookup("akka-contrib-persistence-query-dispatcher")
@@ -247,6 +254,8 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
   def journalIndexName: String = settings.JournalIndex
   def journalSeqNrIndexName: String = settings.JournalSeqNrIndex
   def journalTagIndexName: String = settings.JournalTagIndex
+  def journalTimestampIndexName: String = settings.JournalTimestampIndex
+  def journalPIDIndexName: String = settings.JournalPIDIndex
   def journalWriteSafety: WriteSafety = settings.JournalWriteConcern
   def journalWTimeout: FiniteDuration = settings.JournalWTimeout
   def journalFsync: Boolean = settings.JournalFSync

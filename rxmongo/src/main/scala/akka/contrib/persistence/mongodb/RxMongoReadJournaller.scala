@@ -119,19 +119,20 @@ object CurrentEventsByTag {
     }
     val query = BSONDocument(
       TAGS -> tag
-    ).merge(offset.fold(BSONDocument.empty)(id => BSONDocument(ID -> BSONDocument("$gt" -> id))))
+    ).merge(offset.fold(BSONDocument.empty)(id => BSONDocument(TS -> BSONDocument("$gt" -> id.time))))
 
     Source.fromFuture(driver.journalCollectionsAsFuture)
           .flatMapConcat{ xs =>
             xs.map(c =>
               c.find(query)
-               .sort(BSONDocument(ID -> 1))
+               .sort(BSONDocument(TS -> 1))
                .cursor[BSONDocument]()
                .documentSource()
             ).reduceLeftOption(_ ++ _)
              .getOrElse(Source.empty)
           }.map{ doc =>
             val id = doc.getAs[BSONObjectID](ID).get
+            val ts = doc.getAs[Long](TS).get
             doc.getAs[BSONArray](EVENTS)
               .map(_.elements
                 .map(_.value)
@@ -239,11 +240,11 @@ class RxMongoJournalStream(driver: RxMongoDriver)(implicit m: Materializer) exte
                 case (None, None) =>
                   rt.find(BSONDocument.empty)
                 case (None, Some(id)) =>
-                  rt.find(BSONDocument(ID -> BSONDocument("$gt" -> id)))
+                  rt.find(BSONDocument(TS -> BSONDocument("$gt" -> id.time)))
                 case (Some(q), None) =>
                   rt.find(q)
                 case (Some(q), Some(id)) =>
-                  rt.find(q ++ BSONDocument(ID -> BSONDocument("$gt" -> id)))
+                  rt.find(q ++ BSONDocument(TS -> BSONDocument("$gt" -> id.time)))
               }).options(QueryOpts().tailable.awaitData)
                 .cursor[BSONDocument]()
                 .documentPublisher()
@@ -252,6 +253,7 @@ class RxMongoJournalStream(driver: RxMongoDriver)(implicit m: Materializer) exte
           .via(killSwitch.flow)
           .mapConcat { d =>
             val id = d.getAs[BSONObjectID](ID).get
+            val ts = d.getAs[Long](TS).get
             d.getAs[BSONArray](EVENTS).map(_.elements.map(e => e.value).collect {
               case d: BSONDocument => driver.deserializeJournal(d) -> ObjectIdOffset(id.stringify, id.time)
             }).getOrElse(Nil)

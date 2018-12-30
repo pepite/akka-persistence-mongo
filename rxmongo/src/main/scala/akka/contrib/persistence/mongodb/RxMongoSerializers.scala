@@ -165,6 +165,7 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
       Option(atom.tags).filter(_.nonEmpty).foldLeft(
         BSONDocument(
           PROCESSOR_ID -> atom.pid,
+          TS -> atom.ts,
           FROM -> atom.from,
           TO -> atom.to,
           EVENTS -> BSONArray(atom.events.map(serializeEvent)),

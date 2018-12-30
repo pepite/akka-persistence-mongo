@@ -259,13 +259,14 @@ object Event {
   }
 }
 
-case class Atom(pid: String, from: Long, to: Long, events: ISeq[Event]) {
+case class Atom(pid: String, ts: Long, from: Long, to: Long, events: ISeq[Event]) {
   def tags: Set[String] = events.foldLeft(Set.empty[String])(_ ++ _.tags)
 }
 
 object Atom {
   def apply[D](aw: AtomicWrite, useLegacySerialization: Boolean)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Atom = {
     Atom(pid = aw.persistenceId,
+      ts = System.nanoTime(),
       from = aw.lowestSequenceNr,
       to = aw.highestSequenceNr,
       events = aw.payload.map(Event.apply(useLegacySerialization)(_)))
