@@ -205,6 +205,7 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
         import index._
         ensureIndex(name, unique, sparse, fields: _*)(concurrent.ExecutionContext.global)(acc)
       }
+      journalCollection
     })
   }
 
@@ -221,6 +222,7 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
       SnapshottingFieldNames.PROCESSOR_ID -> 1,
       SnapshottingFieldNames.SEQUENCE_NUMBER -> -1,
       TIMESTAMP -> -1)(concurrent.ExecutionContext.global)(snapsCollection)
+    snapsCollection
   }
 
   private[mongodb] lazy val realtime: C = {
@@ -230,6 +232,7 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
       import index._
       ensureIndex(name, unique, sparse, fields: _*)(concurrent.ExecutionContext.global)(acc)
     }
+    realtimeCollection
   }
 
   private[mongodb] val querySideDispatcher = actorSystem.dispatchers.lookup("akka-contrib-persistence-query-dispatcher")
@@ -239,6 +242,7 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
     ensureIndex("akka_persistence_metadata_pid",
       unique = true, sparse = true,
       JournallingFieldNames.PROCESSOR_ID -> 1)(concurrent.ExecutionContext.global)(metadataCollection)
+    metadataCollection
   }
 
   // useful in some methods in each driver

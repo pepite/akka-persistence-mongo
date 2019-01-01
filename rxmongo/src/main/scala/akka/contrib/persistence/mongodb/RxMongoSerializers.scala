@@ -109,6 +109,7 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
       Event(
         pid = d.as[String](PROCESSOR_ID),
         sn = d.as[Long](SEQUENCE_NUMBER),
+        ts = d.as[Long](TS),
         payload = deserializePayload(
           d.get(PayloadKey).get,
           d.as[String](TYPE),
@@ -139,18 +140,20 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
     private def deserializeDocumentLegacy(document: BSONDocument)(implicit serialization: Serialization, system: ActorSystem): Event = {
       val persistenceId = document.as[String](PROCESSOR_ID)
       val sequenceNr = document.as[Long](SEQUENCE_NUMBER)
+      val timestamp = document.as[Long](TS)
       val tags = document.getAs[BSONArray](TAGS).toList.flatMap(_.values.collect{ case BSONString(s) => s }).toSet
       document.get(SERIALIZED) match {
         case Some(b: BSONDocument) =>
           Event(pid = persistenceId,
                 sn = sequenceNr,
+                ts = timestamp,
                 payload = Bson(b.as[BSONDocument](PayloadKey), tags),
                 sender = b.getAs[Array[Byte]](SenderKey).flatMap(serialization.deserialize(_, classOf[ActorRef]).toOption),
                 manifest = None)
         case Some(ser: BSONBinary) =>
           val repr = serialization.deserialize(ser.byteArray, classOf[PersistentRepr])
             .getOrElse(throw new IllegalStateException(s"Unable to deserialize PersistentRepr for id $persistenceId and sequence number $sequenceNr"))
-          Event[BSONDocument](useLegacySerialization = false)(repr).copy(pid = persistenceId, sn = sequenceNr)
+          Event[BSONDocument](timestamp, useLegacySerialization = false)(repr).copy(pid = persistenceId, sn = sequenceNr)
         case Some(x) =>
           throw new IllegalStateException(s"Unexpected value $x for $SERIALIZED field in document for id $persistenceId and sequence number $sequenceNr")
         case None =>
@@ -177,7 +180,7 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
     import Producer._
     private def serializeEvent(event: Event): BSONDocument = {
       val doc = serializePayload(event.payload)(
-        BSONDocument(VERSION -> 1, PROCESSOR_ID -> event.pid, SEQUENCE_NUMBER -> event.sn))
+        BSONDocument(VERSION -> 1, TS -> event.ts, PROCESSOR_ID -> event.pid, SEQUENCE_NUMBER -> event.sn))
       (for {
         d <- Option(doc)
         d <- Option(event.tags).filter(_.nonEmpty).map(tags => d.merge(TAGS -> serializeTags(tags))).orElse(Option(d))

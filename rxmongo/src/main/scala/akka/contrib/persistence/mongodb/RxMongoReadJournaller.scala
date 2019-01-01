@@ -28,7 +28,7 @@ object CurrentAllEvents {
     Source.fromFuture(driver.journalCollectionsAsFuture)
       .flatMapConcat(_.map { c =>
         c.find(BSONDocument())
-          .projection(BSONDocument(EVENTS -> 1))
+          .projection(BSONDocument(TS -> 1, EVENTS -> 1))
           .cursor[BSONDocument]()
           .documentSource()
           .map { doc =>
@@ -95,7 +95,7 @@ object CurrentEventsByPersistenceId {
             .flatMapConcat(
               _.find(query)
                 .sort(BSONDocument(TO -> 1))
-                .projection(BSONDocument(EVENTS -> 1))
+                .projection(BSONDocument(TS -> 1, EVENTS -> 1))
                 .cursor[BSONDocument]()
                 .documentSource()
             ).map( doc =>
@@ -115,11 +115,11 @@ object CurrentEventsByTag {
 
     val offset = fromOffset match {
       case NoOffset => None
-      case ObjectIdOffset(hexStr, _) => BSONObjectID.parse(hexStr).toOption
+      case ObjectIdOffset(hexStr, time) => Some(time)
     }
     val query = BSONDocument(
       TAGS -> tag
-    ).merge(offset.fold(BSONDocument.empty)(id => BSONDocument(TS -> BSONDocument("$gt" -> id.time))))
+    ).merge(offset.fold(BSONDocument.empty)(ts => BSONDocument(TS -> BSONDocument("$gt" -> ts))))
 
     Source.fromFuture(driver.journalCollectionsAsFuture)
           .flatMapConcat{ xs =>
@@ -136,7 +136,7 @@ object CurrentEventsByTag {
             doc.getAs[BSONArray](EVENTS)
               .map(_.elements
                 .map(_.value)
-                .collect{ case d:BSONDocument => driver.deserializeJournal(d) -> ObjectIdOffset(id.stringify, id.time) }
+                .collect{ case d:BSONDocument => driver.deserializeJournal(d) -> ObjectIdOffset(id.stringify, ts) }
                 .filter(_._1.tags.contains(tag))
               )
               .getOrElse(Nil)
@@ -144,7 +144,7 @@ object CurrentEventsByTag {
   }
 }
 
-class RxMongoRealtimeGraphStage(driver: RxMongoDriver, bufsz: Int = 16)(factory: Option[BSONObjectID] => Publisher[BSONDocument])
+class RxMongoRealtimeGraphStage(driver: RxMongoDriver, timestamp: Option[Long], bufsz: Int = 16)(factory: Option[Long] => Publisher[BSONDocument])
   extends GraphStage[SourceShape[BSONDocument]] {
 
   private val out = Outlet[BSONDocument]("out")
@@ -153,7 +153,7 @@ class RxMongoRealtimeGraphStage(driver: RxMongoDriver, bufsz: Int = 16)(factory:
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) {
-      private var lastId: Option[BSONObjectID] = None
+      private var lastId: Option[Long] = timestamp
       private var subscription: Option[Subscription] = None
       private var cursor: Option[Publisher[BSONDocument]] = None
       private var buffer: List[BSONDocument] = Nil
@@ -174,7 +174,7 @@ class RxMongoRealtimeGraphStage(driver: RxMongoDriver, bufsz: Int = 16)(factory:
         }
         else
           buffer = buffer ::: List(doc)
-        lastId = doc.getAs[BSONObjectID]("_id")
+        lastId = doc.getAs[Long](TS)
       }
 
       private def errAc = getAsyncCallback[Throwable](failStage)
@@ -230,36 +230,40 @@ class RxMongoJournalStream(driver: RxMongoDriver)(implicit m: Materializer) exte
 
   implicit val ec: ExecutionContext = driver.querySideDispatcher
 
-  def cursor(query: Option[BSONDocument]): Source[(Event, Offset),NotUsed] =
-    if (driver.realtimeEnablePersistence)
+  def cursor(query: Option[BSONDocument], timestamp: Option[Long]): Source[(Event, Offset),NotUsed] =
+    if (driver.realtimeEnablePersistence) {
       Source.fromFuture(driver.realtime)
         .flatMapConcat { rt =>
           Source.fromGraph(
-            new RxMongoRealtimeGraphStage(driver)(maybeId => {
-              ((query, maybeId) match {
-                case (None, None) =>
-                  rt.find(BSONDocument.empty)
-                case (None, Some(id)) =>
-                  rt.find(BSONDocument(TS -> BSONDocument("$gt" -> id.time)))
-                case (Some(q), None) =>
+            new RxMongoRealtimeGraphStage(driver, timestamp)(maybeSeq => {
+              ((query, maybeSeq) match {
+                case (None, None) => {
+                   rt.find(BSONDocument.empty)
+                }
+                case (None, Some(seq)) => {
+                  rt.find(BSONDocument(TS -> BSONDocument("$gte" -> seq)))
+                }
+                case (Some(q), None) => {
                   rt.find(q)
-                case (Some(q), Some(id)) =>
-                  rt.find(q ++ BSONDocument(TS -> BSONDocument("$gt" -> id.time)))
+                }
+                case (Some(q), Some(seq)) => {
+                  rt.find(q ++ BSONDocument(TS -> BSONDocument("$gte" -> seq)))
+                }
               }).options(QueryOpts().tailable.awaitData)
                 .cursor[BSONDocument]()
                 .documentPublisher()
             })
           )
-          .via(killSwitch.flow)
-          .mapConcat { d =>
-            val id = d.getAs[BSONObjectID](ID).get
-            val ts = d.getAs[Long](TS).get
-            d.getAs[BSONArray](EVENTS).map(_.elements.map(e => e.value).collect {
-              case d: BSONDocument => driver.deserializeJournal(d) -> ObjectIdOffset(id.stringify, id.time)
-            }).getOrElse(Nil)
-          }
+            .via(killSwitch.flow)
+            .mapConcat { d =>
+              val id = d.getAs[BSONObjectID](ID).get
+              val ts = d.getAs[Long](TS).get
+              d.getAs[BSONArray](EVENTS).map(_.elements.map(e => e.value).collect {
+                case d: BSONDocument => driver.deserializeJournal(d) -> ObjectIdOffset(id.stringify, ts)
+              }).getOrElse(Nil)
+            }
         }
-    else
+    } else
       Source.empty
 }
 
@@ -292,20 +296,25 @@ class RxMongoReadJournaller(driver: RxMongoDriver, m: Materializer) extends Mong
   override def liveEventsByPersistenceId(persistenceId: String)(implicit m: Materializer): Source[Event, NotUsed] = {
     journalStream.cursor(Option(BSONDocument(
       PROCESSOR_ID -> persistenceId
-    ))).mapConcat{ case(ev,_) => List(ev).filter(_.pid == persistenceId) }
+    )), None).mapConcat{ case(ev,_) => List(ev).filter(_.pid == persistenceId) }
   }
 
   override def liveEvents(implicit m: Materializer): Source[Event, NotUsed] = {
-    journalStream.cursor(None).map(_._1)
+    journalStream.cursor(None, None).map(_._1)
   }
 
   override def livePersistenceIds(implicit m: Materializer): Source[String, NotUsed] = {
-    journalStream.cursor(None).map{ case(ev,_) => ev.pid }
+    journalStream.cursor(None, None).map{ case(ev,_) => ev.pid }
   }
 
   override def liveEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ord: Ordering[Offset]): Source[(Event, Offset), NotUsed] = {
-    journalStream.cursor(Option(BSONDocument(
+    val fromOffset = offset match {
+      case NoOffset => None
+      case ObjectIdOffset(hexStr, time) => Some(time)
+    }
+    val query = BSONDocument(
       TAGS -> tag
-    ))).filter{ case(ev, off) => ev.tags.contains(tag) &&  ord.gt(off, offset)}
+    )
+    journalStream.cursor(Option(query), fromOffset).filter{ case(ev, off) => ev.tags.contains(tag) &&  ord.gt(off, offset)}
   }
 }

@@ -197,7 +197,7 @@ object Payload {
 }
 
 
-case class Event(pid: String, sn: Long, payload: Payload, sender: Option[ActorRef] = None, manifest: Option[String] = None, writerUuid: Option[String] = None) {
+case class Event(pid: String, sn: Long, ts: Long, payload: Payload, sender: Option[ActorRef] = None, manifest: Option[String] = None, writerUuid: Option[String] = None) {
 
   def tags: Set[String] = payload.tags
 
@@ -234,11 +234,12 @@ case class Event(pid: String, sn: Long, payload: Payload, sender: Option[ActorRe
 }
 
 object Event {
-  def apply[D](useLegacySerialization: Boolean)(repr: PersistentRepr)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Event =
+  def apply[D](timestamp: Long, useLegacySerialization: Boolean)(repr: PersistentRepr)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Event =
   if (useLegacySerialization)
     Event(
       pid = repr.persistenceId,
       sn = repr.sequenceNr,
+      ts = timestamp,
       payload = Payload(repr),
       sender = Option(repr.sender),
       manifest = Option(repr.manifest).filterNot(_ == PersistentRepr.Undefined),
@@ -248,6 +249,7 @@ object Event {
     Event(
       pid = repr.persistenceId,
       sn = repr.sequenceNr,
+      ts = timestamp,
       payload = Payload(repr.payload),
       sender = Option(repr.sender),
       manifest = Option(repr.manifest).filterNot(_ == PersistentRepr.Undefined),
@@ -265,11 +267,13 @@ case class Atom(pid: String, ts: Long, from: Long, to: Long, events: ISeq[Event]
 
 object Atom {
   def apply[D](aw: AtomicWrite, useLegacySerialization: Boolean)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Atom = {
+    val timestamp = System.nanoTime()
+
     Atom(pid = aw.persistenceId,
-      ts = System.nanoTime(),
+      ts = timestamp,
       from = aw.lowestSequenceNr,
       to = aw.highestSequenceNr,
-      events = aw.payload.map(Event.apply(useLegacySerialization)(_)))
+      events = aw.payload.map(Event(timestamp, useLegacySerialization)(_)))
   }
 }
 

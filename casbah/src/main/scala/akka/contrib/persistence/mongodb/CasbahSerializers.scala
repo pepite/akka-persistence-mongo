@@ -40,6 +40,7 @@ class CasbahSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem) 
     private def deserializeVersionOne(d: DBObject) = Event(
       pid = d.as[String](PROCESSOR_ID),
       sn = d.as[Long](SEQUENCE_NUMBER),
+      ts = d.as[Long](TS),
       payload = Payload[DBObject](
         hint = d.as[String](TYPE),
         any = d.as[Any](PayloadKey),
@@ -56,11 +57,13 @@ class CasbahSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem) 
     private def deserializeDocumentLegacy(d: DBObject) = {
       val persistenceId = d.as[String](PROCESSOR_ID)
       val sequenceNr = d.as[Long](SEQUENCE_NUMBER)
+      val timestamp = d.as[Long](TS)
       d.get(SERIALIZED) match {
         case b: DBObject =>
           Event(
             pid = persistenceId,
             sn = sequenceNr,
+            ts = timestamp,
             payload = Bson(b.as[DBObject](PayloadKey), Set()),
             sender = b.getAs[Array[Byte]](SenderKey).flatMap(serialization.deserialize(_, classOf[ActorRef]).toOption),
             manifest = None,
@@ -69,7 +72,7 @@ class CasbahSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem) 
         case _ =>
           val content = d.as[Array[Byte]](SERIALIZED)
           val repr = serialization.deserialize(content, classOf[PersistentRepr]).get
-          Event[DBObject](useLegacySerialization = false)(repr).copy(pid = persistenceId, sn = sequenceNr)
+          Event[DBObject](timestamp, useLegacySerialization = false)(repr).copy(pid = persistenceId, sn = sequenceNr)
       }
 
     }
