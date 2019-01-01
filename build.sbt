@@ -6,7 +6,7 @@ scalaVersion := scalaV
 
 crossScalaVersions := Seq("2.11.8", "2.12.2")
 
-val AkkaV = "2.5.12" //min version to have Serialization.withTransportInformation
+val AkkaV = "2.5.2" // version wwithout Serialization.withTransportInformation for lagom 1.4.4
 
 def commonDeps(sv:String) = Seq(
   ("com.typesafe.akka"  %% "akka-persistence" % AkkaV % "provided")
@@ -109,7 +109,7 @@ lazy val `akka-persistence-mongo-rxmongo` = (project in file("rxmongo"))
   .settings(commonSettings:_*)
   .settings(
     libraryDependencies ++= Seq(
-      ("org.reactivemongo" %% "reactivemongo" % "0.16.0" % "provided")
+      ("org.reactivemongo" %% "reactivemongo" % "0.16.1" % "provided")
         .exclude("com.typesafe.akka","akka-actor_2.11")
         .exclude("com.typesafe.akka","akka-actor_2.12"),
       ("org.reactivemongo" %% "reactivemongo-akkastream" % "0.16.0" % "provided")

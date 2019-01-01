@@ -16,7 +16,7 @@ import akka.stream.{ActorMaterializer, Materializer}
 import org.slf4j.{Logger, LoggerFactory}
 import reactivemongo.akkastream._
 import reactivemongo.api.collections.bson.BSONCollection
-import reactivemongo.api.commands.{LastError, WriteResult}
+import reactivemongo.api.commands.{LastError, MultiBulkWriteResult, WriteResult}
 import reactivemongo.bson.{BSONDocument, _}
 
 import scala.collection.immutable.{Seq => ISeq}
@@ -75,12 +75,17 @@ class RxMongoJournaller(val driver: RxMongoDriver) extends MongoPersistenceJourn
     else throw new Exception(wr.writeErrors.map(e => s"${e.errmsg} - [${e.code}]").mkString(",")) with NoStackTrace
   }
 
+  private [this] def bulkInsert(coll: BSONCollection, ordered: Boolean, writeConcern: reactivemongo.api.commands.WriteConcern, seq: Seq[BSONDocument])(implicit ec: ExecutionContext): Future[MultiBulkWriteResult] =
+    coll.insert[BSONDocument](ordered = ordered).
+      many(seq)
+
+
   private[this] def doBatchAppend(writes: ISeq[AtomicWrite], collection: Future[BSONCollection])(implicit ec: ExecutionContext): Future[ISeq[Try[Unit]]] = {
     val batch = writes.map(aw => Try(driver.serializeJournal(Atom[BSONDocument](aw, driver.useLegacySerialization))))
 
     if (batch.forall(_.isSuccess)) {
       val collected = batch.toStream.collect { case Success(doc) => doc }
-      collection.flatMap(_.insert[BSONDocument](ordered = true, writeConcern).many(collected).map(_ => batch.map(_.map(_ => ()))))
+      collection.flatMap(bulkInsert(_, ordered = true, writeConcern, collected).map(_ => batch.map(_.map(_ => ()))))
     } else {
       Future.sequence(batch.map {
         case Success(document: BSONDocument) =>

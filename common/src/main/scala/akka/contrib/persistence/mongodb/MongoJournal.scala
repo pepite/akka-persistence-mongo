@@ -129,6 +129,7 @@ trait JournallingFieldNames {
   final val ConfirmTargetKey = "ct"
 
   final val VERSION = "v"
+  final val TS = "ts"
   final val EVENTS = "events"
   final val FROM = "from"
   final val TO = "to"
