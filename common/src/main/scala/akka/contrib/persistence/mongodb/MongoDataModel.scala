@@ -163,7 +163,7 @@ object Payload {
   implicit def bytes2payload(buf: Array[Byte]): Bin = Bin(buf, Set.empty[String])
 
   def apply[D](payload: Any, tags: Set[String] = Set.empty)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Payload = {
-    SerializationHelper.withTransportInformation[Payload](ser.system) {
+    Serialization.withTransportInformation[Payload](ser.system) { () =>
       payload match {
         case tg: Tagged => Payload(tg.payload, tg.tags)
         case pr: PersistentRepr => Legacy(pr, tags)
@@ -200,6 +200,13 @@ object Payload {
 case class Event(pid: String, sn: Long, ts: Long, payload: Payload, sender: Option[ActorRef] = None, manifest: Option[String] = None, writerUuid: Option[String] = None) {
 
   def tags: Set[String] = payload.tags
+
+//  override def equals(evt: Any): Boolean = {
+//    evt match {
+//      case event: Event => pid.equals(event.pid) && sn.equals(event.sn) && payload.equals(event.payload) && sender.equals(event.sender) && manifest.equals(event.manifest) && writerUuid.equals(event.writerUuid)
+//      case _ => false
+//    }
+//  }
 
   def toRepr: PersistentRepr = payload match {
     case l:Legacy =>
@@ -259,6 +266,7 @@ object Event {
   implicit object EventOrdering extends Ordering[Event] {
     override def compare(x: Event, y: Event): Int = Ordering[Long].compare(x.sn,y.sn)
   }
+
 }
 
 case class Atom(pid: String, ts: Long, from: Long, to: Long, events: ISeq[Event]) {

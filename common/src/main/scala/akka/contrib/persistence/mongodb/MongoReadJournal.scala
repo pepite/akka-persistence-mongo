@@ -75,6 +75,7 @@ class ScalaDslMongoReadJournal(impl: MongoPersistenceReadJournallingApi)(implici
   }
 
   def allEvents(): Source[EventEnvelope, NotUsed] = {
+
     val pastSource = impl.currentAllEvents
     val realtimeSource = impl.liveEvents
 //      Source.actorRef[(Event, Offset)](streamBufferSizeMaxConfig.getInt("all-events"), OverflowStrategy.dropTail)

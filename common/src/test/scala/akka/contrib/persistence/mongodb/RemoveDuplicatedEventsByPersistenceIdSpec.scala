@@ -38,14 +38,14 @@ trait AkkaStreamFixture extends BeforeAndAfterEach {
 class RemoveDuplicatedEventsByPersistenceIdSpec extends BaseUnitTest with ScalaFutures with AkkaStreamFixture {
 
   "RemoveDuplicatedEventsByPersistenceId" should "not remove non duplicate events" in {
-
+    val time = System.nanoTime()
     val events = List(
-      Event("pid-1", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 3L, StringPayload("foo", Set())),
-      Event("pid-1", 4L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 2L, StringPayload("foo", Set()))
+      Event("pid-1", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 3L, time, StringPayload("foo", Set())),
+      Event("pid-1", 4L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 2L, time, StringPayload("foo", Set()))
     )
 
     val processedEvents = Source(events).via(new RemoveDuplicatedEventsByPersistenceId).runFold(Vector.empty[Event])(_ :+ _).futureValue
@@ -55,25 +55,26 @@ class RemoveDuplicatedEventsByPersistenceIdSpec extends BaseUnitTest with ScalaF
 
   it should "remove duplicate sequential events" in {
 
+    val time =  System.nanoTime()
     val events = List(
-      Event("pid-1", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 3L, StringPayload("foo", Set())),
-      Event("pid-1", 4L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 2L, StringPayload("foo", Set()))
+      Event("pid-1", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 3L, time, StringPayload("foo", Set())),
+      Event("pid-1", 4L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 2L, time, StringPayload("foo", Set()))
     )
 
     val expectedEvents = List(
-      Event("pid-1", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 3L, StringPayload("foo", Set())),
-      Event("pid-1", 4L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 2L, StringPayload("foo", Set()))
+      Event("pid-1", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 3L, time, StringPayload("foo", Set())),
+      Event("pid-1", 4L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 2L, time, StringPayload("foo", Set()))
     )
 
 
@@ -84,25 +85,26 @@ class RemoveDuplicatedEventsByPersistenceIdSpec extends BaseUnitTest with ScalaF
 
   it should "remove random duplicate events" in {
 
+    val time = System.nanoTime()
     val events = List(
-      Event("pid-1", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 3L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 4L, StringPayload("foo", Set()))
+      Event("pid-1", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 3L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 4L, time, StringPayload("foo", Set()))
     )
 
     val expectedEvents = List(
-      Event("pid-1", 1L, StringPayload("foo", Set())),
-      Event("pid-2", 1L, StringPayload("foo", Set())),
-      Event("pid-1", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 3L, StringPayload("foo", Set())),
-      Event("pid-2", 2L, StringPayload("foo", Set())),
-      Event("pid-1", 4L, StringPayload("foo", Set()))
+      Event("pid-1", 1L, time, StringPayload("foo", Set())),
+      Event("pid-2", 1L, time, StringPayload("foo", Set())),
+      Event("pid-1", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 3L, time, StringPayload("foo", Set())),
+      Event("pid-2", 2L, time, StringPayload("foo", Set())),
+      Event("pid-1", 4L, time, StringPayload("foo", Set()))
     )
 
 

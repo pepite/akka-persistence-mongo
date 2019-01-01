@@ -6,12 +6,13 @@ import akka.actor.ActorSystem
 import akka.contrib.persistence.mongodb.MongoPersistenceDriver.{Acknowledged, Journaled, ReplicaAcknowledged, Unacknowledged, WriteSafety}
 import akka.stream.ActorMaterializer
 import com.mongodb.ConnectionString
-import com.mongodb.client.model.{CreateCollectionOptions, IndexOptions}
 import com.typesafe.config.Config
 import org.mongodb.scala.{MongoClientSettings, _}
 import model.Indexes._
 import org.mongodb.scala.bson.{BsonBoolean, BsonDocument}
+import org.mongodb.scala.model.{CreateCollectionOptions, IndexOptions}
 
+import scala.collection.JavaConverters._
 import scala.concurrent.duration.Duration
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -64,7 +65,7 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
 
   override private[mongodb] def cappedCollection(name: String)(implicit ec: ExecutionContext): C = {
     def createCappedCollection(): C = {
-      val options = new CreateCollectionOptions().capped(true).sizeInBytes(realtimeCollectionSize)
+      val options = CreateCollectionOptions().capped(true).sizeInBytes(realtimeCollectionSize)
       db.createCollection(name, options)
         .toFuture()
         .flatMap(_ => collection(name))
@@ -117,7 +118,7 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
           case (name, d) if d > 0 => ascending(name)
           case (name, _) => descending(name)
         }: _*),
-        new IndexOptions().unique(unique).sparse(sparse).name(indexName)
+        IndexOptions().unique(unique).sparse(sparse).name(indexName)
       ).toFuture()
     } yield c
   }

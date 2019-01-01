@@ -67,7 +67,7 @@ object CurrentPersistenceIds {
       tmps         <- Future.sequence(tmpNames.map(driver.collection))
     } yield tmps )
     .flatMapConcat(_.map(_.find().asAkka).reduceLeftOption(_ ++ _).getOrElse(Source.empty))
-    .mapConcat(_.get[BsonString]("_id").toList)
+    .mapConcat(_.get[BsonString](ID).toList)
     .map(_.getValue)
     .alsoTo(Sink.onComplete{ _ =>
       driver
@@ -121,23 +121,24 @@ object CurrentEventsByTag {
       case ObjectIdOffset(hexStr, _) => Try(BsonObjectId(new ObjectId(hexStr))).toOption
     }
     val query = and(
-      equal(TAGS, tag) :: Nil ++ offset.map(gt(ID, _)) : _*
+      equal(TAGS, tag) :: Nil ++ offset.map(gt(TS, _)) : _*
     )
 
     Source
       .fromFuture(driver.journalCollectionsAsFuture)
       .flatMapConcat(
-        _.map(_.find(query).sort(ascending(ID)).asAkka)
+        _.map(_.find(query).sort(ascending(TS)).asAkka)
          .reduceLeftOption(_ ++ _)
          .getOrElse(Source.empty[driver.D])
       ).map{ doc =>
         val id = doc.get[BsonObjectId](ID).get.getValue
+        val ts = doc.getLong(TS)
         doc.get[BsonArray](EVENTS)
           .map(_.getValues
                 .asScala
                 .collect{
                   case d:BsonDocument =>
-                    driver.deserializeJournal(d) -> ObjectIdOffset(id.toHexString, id.getDate.getTime)
+                    driver.deserializeJournal(d) -> ObjectIdOffset(id.toHexString, ts)
                 }
                 .filter{
                   case (ev,_) => ev.tags.contains(tag)
@@ -147,7 +148,7 @@ object CurrentEventsByTag {
   }
 }
 
-class ScalaDriverRealtimeGraphStage(driver: ScalaMongoDriver, bufsz: Int = 16)(factory: Option[BsonObjectId] => FindObservable[Document])
+class ScalaDriverRealtimeGraphStage(driver: ScalaMongoDriver, bufsz: Int = 16, timestamp: Option[Long])(factory: Option[Long] => FindObservable[Document])
   extends GraphStage[SourceShape[Document]] {
 
   private val out = Outlet[Document]("out")
@@ -156,7 +157,7 @@ class ScalaDriverRealtimeGraphStage(driver: ScalaMongoDriver, bufsz: Int = 16)(f
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
     new GraphStageLogic(shape) {
-      @volatile private var lastId: Option[BsonObjectId] = None
+      @volatile private var lastId: Option[Long] = timestamp
       @volatile private var subscription: Option[Subscription] = None
       @volatile private var buffer: List[Document] = Nil
       private var currentCursor: Option[FindObservable[Document]] = None
@@ -175,7 +176,7 @@ class ScalaDriverRealtimeGraphStage(driver: ScalaMongoDriver, bufsz: Int = 16)(f
         }
         else
           buffer = buffer ::: List(result)
-        lastId = result.get[BsonObjectId]("_id")
+        lastId = Some(result.getLong(TS))
       }
 
       private def onSubAc = getAsyncCallback[Subscription]{ _subscription =>
@@ -245,35 +246,37 @@ class ScalaDriverJournalStream(driver: ScalaMongoDriver)(implicit m: Materialize
     _.cursorType(CursorType.TailableAwait)
      .maxAwaitTime(30.seconds)
 
-  def cursor(query: Option[conversions.Bson]): Source[(Event, Offset),NotUsed] =
+  def cursor(query: Option[conversions.Bson], fromOffset: Option[Long]): Source[(Event, Offset),NotUsed] = {
     if (driver.realtimeEnablePersistence)
       Source.fromFuture(driver.realtime)
         .flatMapConcat { rt =>
           Source.fromGraph(
-            new ScalaDriverRealtimeGraphStage(driver)(maybeLastId => {
+            new ScalaDriverRealtimeGraphStage(driver = driver, timestamp = fromOffset)(maybeLastId => {
               (query, maybeLastId) match {
                 case (Some(q), None) =>
                   cursorBuilder(rt.find(q))
-                case (Some(q), Some(id)) =>
-                  cursorBuilder(rt.find(and(q, gte("_id", id))))
+                case (Some(q), Some(ts)) =>
+                  cursorBuilder(rt.find(and(q, gt(TS, ts))))
                 case (None, None) =>
                   cursorBuilder(rt.find())
-                case (None, Some(id)) =>
-                  cursorBuilder(rt.find(gte("_id", id)))
+                case (None, Some(ts)) =>
+                  cursorBuilder(rt.find(gt(TS, ts)))
               }
-          }).named("rt-graph-stage").async)
-          .via(killSwitch.flow)
-          .mapConcat[(Event, Offset)] { d =>
+            }).named("rt-graph-stage").async)
+            .via(killSwitch.flow)
+            .mapConcat[(Event, Offset)] { d =>
             val id = d.get[BsonObjectId](ID).get.getValue
+            val ts = d.getLong(TS)
             d.get[BsonArray](EVENTS).map(_.getValues.asScala.collect {
               case d: BsonDocument =>
-                driver.deserializeJournal(d) -> ObjectIdOffset(id.toHexString, id.getDate.getTime)
+                driver.deserializeJournal(d) -> ObjectIdOffset(id.toHexString, ts)
             }.toList).getOrElse(Nil)
           }
         }
         .named("rt-cursor-source")
     else
       Source.empty
+  }
 }
 
 class ScalaDriverPersistenceReadJournaller(driver: ScalaMongoDriver, m: Materializer) extends MongoPersistenceReadJournallingApi {
@@ -303,19 +306,24 @@ class ScalaDriverPersistenceReadJournaller(driver: ScalaMongoDriver, m: Material
     }
 
   override def liveEvents(implicit m: Materializer): Source[Event, NotUsed] =
-    journalStream.cursor(None).map{ case(e,_) => e }
+    journalStream.cursor(None, None).map{ case(e,_) => e }
 
   override def livePersistenceIds(implicit m: Materializer): Source[String, NotUsed] =
-    journalStream.cursor(None).map{ case(e,_) => e.pid }
+    journalStream.cursor(None, None).map{ case(e,_) => e.pid }
 
   override def liveEventsByPersistenceId(persistenceId: String)(implicit m: Materializer): Source[Event, NotUsed] =
     journalStream.cursor(
-      Option(equal(PROCESSOR_ID, persistenceId))
+      Option(equal(PROCESSOR_ID, persistenceId)), None
     ).mapConcat{ case(ev,_) => List(ev).filter(_.pid == persistenceId) }
 
-  override def liveEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ord: Ordering[Offset]): Source[(Event, Offset), NotUsed] =
+  override def liveEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ord: Ordering[Offset]): Source[(Event, Offset), NotUsed] = {
+    val fromOffset = offset match {
+      case NoOffset => None
+      case ObjectIdOffset(hexStr, time) => Some(time)
+    }
     journalStream.cursor(
-      Option(equal(TAGS, tag))
-    ).filter{ case(ev, off) => ev.tags.contains(tag) &&  ord.gt(off, offset)}
+      Option(equal(TAGS, tag)), fromOffset
+    ).filter { case (ev, off) => ev.tags.contains(tag) && ord.gt(off, offset) }
+  }
 
 }

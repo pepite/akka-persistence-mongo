@@ -1,7 +1,7 @@
 /*
 	 * Copyright (c) 2018      Gael Breard, Orange: Fix issue #179 about actorRef serialization
 	 */
-package akka.contrib.persistence.mongodb
+/*package akka.contrib.persistence.mongodb
 
 import akka.actor.ExtendedActorSystem
 import akka.serialization.Serialization
@@ -18,4 +18,4 @@ object SerializationHelper {
       }
     }
   }
-}
+}*/

@@ -136,24 +136,25 @@ class CurrentEventsByTagCursorSource(driver: CasbahMongoDriver, tag: String, fro
     driver.getJournalCollections.toStream
 
   private def buildCursor(coll: MongoCollection, query: DBObject) = {
-    val cursor = coll.find(query).sort(MongoDBObject(ID -> 1))
+    val cursor = coll.find(query).sort(MongoDBObject(TS -> 1))
     cursor
       .toStream
       .flatMap { rslt =>
         val id = rslt.as[ObjectId](ID)
-        rslt.getAs[MongoDBList](EVENTS).map(_.map(ev => id -> ev))
+        val ts = rslt.as[Long](TS)
+        rslt.getAs[MongoDBList](EVENTS).map(_.map(ev => (id, ts) -> ev))
       }
-      .flatMap(lst => lst.collect { case (id, x: DBObject) => id -> x })
+      .flatMap(lst => lst.collect { case ((id, ts), x: DBObject) => (id, ts) -> x })
       .filter { case (_, dbo) => dbo.getAs[MongoDBList](TAGS).exists(xs => xs.contains(tag)) }
-      .map { case (id, dbo) => (cursor, ObjectIdOffset(id.toHexString,id.getDate.getTime), driver.deserializeJournal(dbo)) }
+      .map { case ((id, ts), dbo) => (cursor, ObjectIdOffset(id.toHexString, ts), driver.deserializeJournal(dbo)) }
   }
 
   private def translateOffset: Option[DBObject] =
     fromOffset match {
       case NoOffset =>
         None
-      case ObjectIdOffset(hexStr, _) =>
-        Option(ID $gt new ObjectId(hexStr))
+      case ObjectIdOffset(_, ts) =>
+        Option(TS $gt ts)
     }
 
   override val shape: SourceShape[(Event, Offset)] = SourceShape(outlet)
@@ -246,8 +247,9 @@ class CasbahMongoJournalStream(val driver: CasbahMongoDriver) extends JournalStr
   private val unwrapDocument: DBObject => List[(Event, Offset)] = {
     case next: DBObject if next.keySet().contains(EVENTS) =>
       val id = next.as[ObjectId](ID)
+      val ts = next.as[Long](TS)
       next.as[MongoDBList](EVENTS).collect {
-        case x: DBObject => driver.deserializeJournal(x) -> ObjectIdOffset(id.toHexString, id.getDate.getTime)
+        case x: DBObject => driver.deserializeJournal(x) -> ObjectIdOffset(id.toHexString, ts)
       }.toList
     case _ =>
       Nil

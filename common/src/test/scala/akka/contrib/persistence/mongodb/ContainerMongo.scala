@@ -25,4 +25,5 @@ trait ContainerMongo {
       case x: Throwable => x.printStackTrace()
     }
   }
+
 }

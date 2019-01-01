@@ -109,6 +109,7 @@ class ScalaDriverSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSys
           PROCESSOR_ID -> atom.pid,
           FROM -> atom.from,
           TO -> atom.to,
+          TS -> atom.ts,
           EVENTS -> atom.events.map(serializeEvent),
           VERSION -> 1
         )
@@ -119,6 +120,7 @@ class ScalaDriverSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSys
       val b = serializePayload(event.payload)(Document(
           VERSION -> 1,
           PROCESSOR_ID -> event.pid,
+          TS -> event.ts,
           SEQUENCE_NUMBER -> event.sn,
           TAGS -> event.tags.toSeq
         ))

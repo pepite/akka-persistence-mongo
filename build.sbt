@@ -6,7 +6,7 @@ scalaVersion := scalaV
 
 crossScalaVersions := Seq("2.11.8", "2.12.2")
 
-val AkkaV = "2.5.2" // version wwithout Serialization.withTransportInformation for lagom 1.4.4
+val AkkaV = "2.5.19"
 
 def commonDeps(sv:String) = Seq(
   ("com.typesafe.akka"  %% "akka-persistence" % AkkaV % "provided")

@@ -1,4 +1,4 @@
-/* 
+/*
  * Contributions:
  * Jean-Francois GUENA: implement "suffixed collection name" feature (issue #39 partially fulfilled)
  * ...
@@ -48,25 +48,25 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
   }
 
   def config(extensionClass: Class[_]): Config = ConfigFactory.parseString(s"""
-    |include "/application.conf"
-    |akka.contrib.persistence.mongodb.mongo.driver = "${extensionClass.getName}"
-    |akka.contrib.persistence.mongodb.mongo.mongouri = "mongodb://$host:$noAuthPort/$embedDB"
-    |akka.persistence.journal.plugin = "akka-contrib-mongodb-persistence-journal"
-    |akka-contrib-mongodb-persistence-journal {
-    |    # Class name of the plugin.
-    |  class = "akka.contrib.persistence.mongodb.MongoJournal"
-    |}
-    |akka.persistence.snapshot-store.plugin = "akka-contrib-mongodb-persistence-snapshot"
-    |akka-contrib-mongodb-persistence-snapshot {
-    |    # Class name of the plugin.
-    |  class = "akka.contrib.persistence.mongodb.MongoSnapshots"
-    |}
-    |akka-contrib-mongodb-persistence-readjournal {
-    |  # Class name of the plugin.
-    |  class = "akka.contrib.persistence.mongodb.MongoReadJournal"
-    |}
+                                                                              |include "/application.conf"
+                                                                              |akka.contrib.persistence.mongodb.mongo.driver = "${extensionClass.getName}"
+                                                                              |akka.contrib.persistence.mongodb.mongo.mongouri = "mongodb://$host:$noAuthPort/$embedDB"
+                                                                              |akka.persistence.journal.plugin = "akka-contrib-mongodb-persistence-journal"
+                                                                              |akka-contrib-mongodb-persistence-journal {
+                                                                              |    # Class name of the plugin.
+                                                                              |  class = "akka.contrib.persistence.mongodb.MongoJournal"
+                                                                              |}
+                                                                              |akka.persistence.snapshot-store.plugin = "akka-contrib-mongodb-persistence-snapshot"
+                                                                              |akka-contrib-mongodb-persistence-snapshot {
+                                                                              |    # Class name of the plugin.
+                                                                              |  class = "akka.contrib.persistence.mongodb.MongoSnapshots"
+                                                                              |}
+                                                                              |akka-contrib-mongodb-persistence-readjournal {
+                                                                              |  # Class name of the plugin.
+                                                                              |  class = "akka.contrib.persistence.mongodb.MongoReadJournal"
+                                                                              |}
     $extendedConfig
-    |""".stripMargin).withFallback(ConfigFactory.defaultReference()).resolve()
+                                                                              |""".stripMargin).withFallback(ConfigFactory.defaultReference()).resolve()
 
   def suffixCollNamesEnabled: Boolean = config(extensionClass).getString("akka.contrib.persistence.mongodb.mongo.suffix-builder.class") != null &&
     !config(extensionClass).getString("akka.contrib.persistence.mongodb.mongo.suffix-builder.class").trim.isEmpty
@@ -165,11 +165,11 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
       implicit val mat: ActorMaterializer = ActorMaterializer()
 
       val promises = ("1" :: "2" :: "3" :: "4" :: "5" :: Nil).map(id => id -> Promise[Unit]())
-      
-      val events = "this" :: "is" :: "just" :: "a" :: "test" :: Nil      
+
+      val events = "this" :: "is" :: "just" :: "a" :: "test" :: Nil
       val allEvents = promises.map {case (id, _) => id -> events.map(event => s"$event$id")}
       val probe = TestProbe()
-      allEvents foreach {case (id, evs) => 
+      allEvents foreach {case (id, evs) =>
         promises collect {
           case (i,p) if i == id =>
             val ar = as.actorOf(props(i, p, 5), s"current-all-events-$i")
@@ -187,7 +187,7 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
 
       val readJournal =
         PersistenceQuery(as).readJournalFor[ScalaDslMongoReadJournal](MongoReadJournal.Identifier)
-        
+
       val expectedEvents = allEvents flatMap {case (_, evs) => evs}
 
       val fut = readJournal.currentAllEvents().runFold(expectedEvents.toSet) { (received, ee) =>
@@ -205,7 +205,7 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
       import concurrent.duration._
       implicit val system: ActorSystem = as
       implicit val mat: ActorMaterializer = ActorMaterializer()
-      
+
       implicit def patienceConfig: PatienceConfig = PatienceConfig(timeout = 5.seconds.dilated, interval = 500.millis.dilated)
 
       val promises = ("1" :: "2" :: "3" :: "4" :: "5" :: Nil).map(id => id -> Promise[Unit]())
@@ -286,7 +286,7 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
       import concurrent.duration._
       implicit val system: ActorSystem = as
       implicit val mat: ActorMaterializer = ActorMaterializer()
-      
+
       implicit def patienceConfig: PatienceConfig = PatienceConfig(timeout = 5.seconds.dilated, interval = 500.millis.dilated)
 
       val promises = ("1" :: "2" :: "3" :: "4" :: "5" :: Nil).map(id => id -> Promise[Unit]())
@@ -459,7 +459,7 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
       events foreach (ar ! _)
       events2 foreach (ar2 ! _)
 
-      sq.futureValue(Timeout(3.seconds.dilated))
+      sq.futureValue(Timeout(5.seconds.dilated))
         .toList
         .map(_.event) should be(events2.map(_.s))
 

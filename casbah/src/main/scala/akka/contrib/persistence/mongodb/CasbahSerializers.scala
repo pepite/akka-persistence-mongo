@@ -86,6 +86,7 @@ class CasbahSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem) 
           PROCESSOR_ID -> atom.pid,
           FROM -> atom.from,
           TO -> atom.to,
+          TS -> atom.ts,
           EVENTS -> MongoDBList(atom.events.map(serializeEvent): _*),
           VERSION -> 1
         )
@@ -97,6 +98,7 @@ class CasbahSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem) 
           VERSION -> 1 ::
             PROCESSOR_ID -> event.pid ::
             SEQUENCE_NUMBER -> event.sn ::
+            TS -> event.ts ::
             TAGS -> event.tags.foldLeft(MongoDBList.newBuilder[String])(_ += _).result() ::
             Nil
         ))

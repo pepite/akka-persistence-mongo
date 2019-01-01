@@ -22,7 +22,7 @@ object ScalaDriverPersistenceSnapshotter extends SnapshottingFieldNames {
       case o: Document =>
         obj + (V2.SERIALIZED -> o)
       case _ =>
-        SerializationHelper.withTransportInformation(serialization.system) {
+        Serialization.withTransportInformation(serialization.system) { () =>
           obj + (V2.SERIALIZED -> serialization.serializerFor(classOf[Snapshot]).toBinary(Snapshot(snapshot.snapshot)))
         }
     }

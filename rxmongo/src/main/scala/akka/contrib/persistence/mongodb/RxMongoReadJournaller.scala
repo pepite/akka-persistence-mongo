@@ -28,7 +28,7 @@ object CurrentAllEvents {
     Source.fromFuture(driver.journalCollectionsAsFuture)
       .flatMapConcat(_.map { c =>
         c.find(BSONDocument())
-          .projection(BSONDocument(TS -> 1, EVENTS -> 1))
+          .projection(BSONDocument(EVENTS -> 1))
           .cursor[BSONDocument]()
           .documentSource()
           .map { doc =>
@@ -95,7 +95,7 @@ object CurrentEventsByPersistenceId {
             .flatMapConcat(
               _.find(query)
                 .sort(BSONDocument(TO -> 1))
-                .projection(BSONDocument(TS -> 1, EVENTS -> 1))
+                .projection(BSONDocument(EVENTS -> 1))
                 .cursor[BSONDocument]()
                 .documentSource()
             ).map( doc =>
@@ -115,12 +115,11 @@ object CurrentEventsByTag {
 
     val offset = fromOffset match {
       case NoOffset => None
-      case ObjectIdOffset(hexStr, time) => Some(time)
+      case ObjectIdOffset(hexStr, time) => Some((BSONObjectID.parse(hexStr).get, time))
     }
     val query = BSONDocument(
       TAGS -> tag
-    ).merge(offset.fold(BSONDocument.empty)(ts => BSONDocument(TS -> BSONDocument("$gt" -> ts))))
-
+    ).merge(offset.fold(BSONDocument.empty)(offset => BSONDocument(TS -> BSONDocument("$gt" -> offset._2))))
     Source.fromFuture(driver.journalCollectionsAsFuture)
           .flatMapConcat{ xs =>
             xs.map(c =>
@@ -241,13 +240,13 @@ class RxMongoJournalStream(driver: RxMongoDriver)(implicit m: Materializer) exte
                    rt.find(BSONDocument.empty)
                 }
                 case (None, Some(seq)) => {
-                  rt.find(BSONDocument(TS -> BSONDocument("$gte" -> seq)))
+                  rt.find(BSONDocument(TS -> BSONDocument("$gt" -> seq)))
                 }
                 case (Some(q), None) => {
                   rt.find(q)
                 }
                 case (Some(q), Some(seq)) => {
-                  rt.find(q ++ BSONDocument(TS -> BSONDocument("$gte" -> seq)))
+                  rt.find(q ++ BSONDocument(TS -> BSONDocument("$gt" -> seq)))
                 }
               }).options(QueryOpts().tailable.awaitData)
                 .cursor[BSONDocument]()
