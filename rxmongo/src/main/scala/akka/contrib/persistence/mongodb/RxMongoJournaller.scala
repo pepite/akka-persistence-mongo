@@ -118,7 +118,6 @@ class RxMongoJournaller(val driver: RxMongoDriver) extends MongoPersistenceJourn
   private[this] def findMaxSequence(persistenceId: String, maxSequenceNr: Long)(implicit ec: ExecutionContext): Future[Option[Long]] = {
     def performAggregation(j: BSONCollection): Future[Option[Long]] = {
       import j.BatchCommands.AggregationFramework.{GroupField, Match, MaxField}
-
       j.aggregatorContext[BSONDocument](
         Match(BSONDocument(PROCESSOR_ID -> persistenceId, TO -> BSONDocument("$lte" -> maxSequenceNr))),
         GroupField(PROCESSOR_ID)("max" -> MaxField(TO)) :: Nil,
@@ -224,11 +223,11 @@ class RxMongoJournaller(val driver: RxMongoDriver) extends MongoPersistenceJourn
       .map(_.getOrElse(0L)))
   }
 
-  private[mongodb] override def replayJournal(pid: String, from: Long, to: Long, max: Long)(replayCallback: PersistentRepr ⇒ Unit)(implicit ec: ExecutionContext) =
+  private[mongodb] override def replayJournal(pid: String, from: Long, to: Long, max: Long)(replayCallback: PersistentRepr ⇒ Unit)(implicit ec: ExecutionContext) = {
     if (max == 0L) Future.successful(())
     else {
       val maxInt = max.toIntWithoutWrapping
       journalRange(pid, from, to, maxInt).map(_.toRepr).runWith(Sink.foreach[PersistentRepr](replayCallback)).map(_ => ())
     }
-
+  }
 }
