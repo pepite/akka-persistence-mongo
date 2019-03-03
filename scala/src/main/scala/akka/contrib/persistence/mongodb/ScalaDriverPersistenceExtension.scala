@@ -18,7 +18,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersistenceDriver(system, config) {
   override type C = Future[MongoCollection[D]]
-  override type D = Document
+  override type D = BsonDocument
 
   val ScalaSerializers: ScalaDriverSerializers = ScalaDriverSerializersExtension(system)
   val scalaDriverSettings = ScalaDriverSettings(system)

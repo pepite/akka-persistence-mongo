@@ -1,10 +1,15 @@
+/*
+ * Copyright (c) 2018-2019 Brian Scully
+ *
+ */
+
 package akka.contrib.persistence.mongodb
+
 import akka.actor.ActorSystem
 import akka.persistence.{AtomicWrite, PersistentRepr}
 import akka.stream.{ActorMaterializer, Materializer}
 import akka.stream.scaladsl._
 import com.mongodb.ErrorCategory
-import org.bson.{BsonArray, BsonDocument}
 import org.mongodb.scala._
 import model.Filters._
 import model.Updates._
@@ -12,11 +17,11 @@ import model.Aggregates._
 import model.{Accumulators, BulkWriteOptions, InsertOneModel, UpdateOptions}
 import model.Sorts._
 import model.Projections._
-import org.mongodb.scala.bson.BsonInt64
+import org.mongodb.scala.bson.{BsonDocument, BsonValue}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.{JavaConverters, immutable}
-import JavaConverters._
+import scala.collection.JavaConverters._
+import scala.collection.immutable.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
@@ -31,7 +36,7 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
 
   private[this] def journal(implicit ec: ExecutionContext): driver.C = driver.journal.map(_.withWriteConcern(driver.journalWriteConcern))
 
-  private[this] def realtime: driver.C = driver.realtime
+  private[this] def realtime(implicit ec: ExecutionContext): driver.C = driver.realtime
 
   private[this] def metadata(implicit ec: ExecutionContext): driver.C = driver.metadata.map(_.withWriteConcern(driver.metadataWriteConcern))
 
@@ -58,11 +63,11 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
             .take(max.toLong)
         )
 
-    val flow = Flow[Document]
-      .mapConcat[Event](
-        _.get[BsonArray](EVENTS).map(_.getValues.asScala.toList.collect {
-          case d: BsonDocument => driver.deserializeJournal(Document(d))
-        }).getOrElse(immutable.Seq.empty[Event])
+    val flow = Flow[BsonDocument]
+      .mapConcat[Event](e =>
+        Option(e.get(EVENTS)).filter(_.isArray).map(_.asArray).map(_.getValues.asScala.toList.collect {
+          case d: BsonDocument => driver.deserializeJournal(d)
+        }).getOrElse(Seq.empty[Event])
       )
       .filter(_.sn >= from)
       .filter(_.sn <= to)
@@ -70,28 +75,28 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
     source.via(flow)
   }
 
-  private[this] def doBatchAppend(writes: immutable.Seq[AtomicWrite], collection: driver.C)(implicit ec: ExecutionContext): Future[immutable.Seq[Try[Unit]]] = {
-    val batch = writes.map(aw => Try(driver.serializeJournal(Atom[Document](aw, driver.useLegacySerialization))))
+  private[this] def buildBatch(writes: Seq[AtomicWrite]): Seq[Try[BsonDocument]] =
+    writes.map(aw => Try(driver.serializeJournal(Atom[BsonValue](aw, driver.useLegacySerialization))))
 
+  private[this] def doBatchAppend(batch: Seq[Try[BsonDocument]], collection: driver.C)(implicit ec: ExecutionContext): Future[Seq[Try[BsonDocument]]] = {
     if (batch.forall(_.isSuccess)) {
       val collected: Seq[InsertOneModel[driver.D]] = batch.collect { case Success(doc) => InsertOneModel(doc) }
       collection.flatMap(_.withWriteConcern(writeConcern).bulkWrite(collected, new BulkWriteOptions().ordered(true))
         .toFuture()
-        .map(_ => batch.map(_.map(_ => ()))))
+        .map(_ => batch))
     } else {
       Future.sequence(batch.map {
-        case Success(document: Document) =>
-          collection.flatMap(_.withWriteConcern(writeConcern).insertOne(document).toFuture().map(_ => Success(())))
+        case Success(document: BsonDocument) =>
+          collection.flatMap(_.withWriteConcern(writeConcern).insertOne(document).toFuture().map(_ => Success(document)))
         case f: Failure[_] =>
-          Future.successful(Failure[Unit](f.exception))
+          Future.successful(Failure[BsonDocument](f.exception))
       })
     }
   }
 
-
-  override private[mongodb] def batchAppend(writes: immutable.Seq[AtomicWrite])(implicit ec: ExecutionContext): Future[immutable.Seq[Try[Unit]]] = {
+  override private[mongodb] def batchAppend(writes: Seq[AtomicWrite])(implicit ec: ExecutionContext): Future[Seq[Try[Unit]]] = {
     val batchFuture = if (driver.useSuffixedCollectionNames) {
-      val fZero = Future.successful(immutable.Seq.empty[Try[Unit]])
+      val fZero = Future.successful(Seq.empty[Try[BsonDocument]])
 
       // this should guarantee that futures are performed sequentially...
       writes
@@ -99,18 +104,28 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
         .foldLeft(fZero) { case (future, (_, hunk)) =>
           for {
             prev <- future
-            next <- doBatchAppend(hunk, driver.journal(hunk.head.persistenceId))
+            batch = buildBatch(hunk)
+            next <- doBatchAppend(batch, driver.journal(hunk.head.persistenceId))
           } yield prev ++ next
         }
 
     } else {
-      doBatchAppend(writes, journal)
+      val batch = buildBatch(writes)
+      doBatchAppend(batch, journal)
     }
 
     if (driver.realtimeEnablePersistence)
-      batchFuture.andThen { case _ => doBatchAppend(writes, realtime) }
+      batchFuture.andThen {
+        case Success(batch) =>
+          val f = doBatchAppend(batch, realtime)
+          f.onFailure {
+            case t =>
+              logger.error("Error during write to realtime collection", t)
+          }
+          f
+      }.map(squashToUnit)
     else
-      batchFuture
+      batchFuture.map(squashToUnit)
   }
 
   private[this] def setMaxSequenceMetadata(persistenceId: String, maxSequenceNr: Long)(implicit ec: ExecutionContext): Future[Unit] = {
@@ -133,14 +148,14 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
   }
 
   private[this] def findMaxSequence(persistenceId: String, maxSequenceNr: Long)(implicit ec: ExecutionContext): Future[Option[Long]] = {
-    def performAggregation(j: MongoCollection[driver.D]): Future[Option[Long]] = {
+    def performAggregation(j: MongoCollection[BsonDocument]): Future[Option[Long]] = {
       j.aggregate(
         `match`(and(equal(PROCESSOR_ID,persistenceId), lte(TO, maxSequenceNr))) ::
         group(s"$$$PROCESSOR_ID", Accumulators.max("max", s"$$$TO")) ::
         Nil
       ).toFuture()
       .map(_.headOption)
-      .map(_.flatMap(_.get[BsonInt64]("max").map(_.getValue)))
+      .map(_.flatMap(l => Option(l.asDocument().get("max")).filter(_.isInt64).map(_.asInt64).map(_.getValue)))
     }
 
     for {
@@ -195,21 +210,21 @@ class ScalaDriverPersistenceJournaller(val driver: ScalaMongoDriver) extends Mon
 
   private[this] def maxSequenceFromMetadata(pid: String)(previous: Option[Long])(implicit ec: ExecutionContext): Future[Option[Long]] = {
     previous.fold(
-      metadata.flatMap(_.find(Document(PROCESSOR_ID -> pid))
-        .projection(Document(MAX_SN -> 1))
+      metadata.flatMap(_.find(BsonDocument(PROCESSOR_ID -> pid))
+        .projection(BsonDocument(MAX_SN -> 1))
         .first()
         .toFutureOption()
-        .map(d => d.flatMap(_.get[BsonInt64](MAX_SN).map(_.getValue)))))(l => Future.successful(Option(l)))
+        .map(d => d.flatMap(l => Option(l.asDocument().get(MAX_SN)).filter(_.isInt64).map(_.asInt64).map(_.getValue)))))(l => Future.successful(Option(l)))
   }
 
   override private[mongodb] def maxSequenceNr(pid: String, from: Long)(implicit ec: ExecutionContext) = {
     val journal = driver.getJournal(pid)
-    journal.flatMap(_.find(Document(PROCESSOR_ID -> pid))
-      .projection(Document(TO -> 1))
-      .sort(Document(TO -> -1))
+    journal.flatMap(_.find(BsonDocument(PROCESSOR_ID -> pid))
+      .projection(BsonDocument(TO -> 1))
+      .sort(BsonDocument(TO -> -1))
       .first()
       .toFutureOption()
-      .map(d => d.flatMap(_.get[BsonInt64](TO).map(_.getValue)))
+      .map(d => d.flatMap(a => Option(a.asDocument().get(TO)).filter(_.isInt64).map(_.asInt64).map(_.getValue)))
       .flatMap(maxSequenceFromMetadata(pid)(_))
       .map(_.getOrElse(0L)))
   }
