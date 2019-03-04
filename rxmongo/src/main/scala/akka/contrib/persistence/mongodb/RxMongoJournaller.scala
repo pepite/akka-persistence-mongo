@@ -55,6 +55,7 @@ class RxMongoJournaller(val driver: RxMongoDriver) extends MongoPersistenceJourn
         .flatMapConcat(
           _.find(journalRangeQuery(pid, from, to), Option(BSONDocument(EVENTS -> 1)))
             .projection(BSONDocument(TS -> 1, EVENTS -> 1))
+            .sort(BSONDocument(TO -> 1))
             .cursor[BSONDocument]()
             .documentSource(maxDocs = max)
         )
