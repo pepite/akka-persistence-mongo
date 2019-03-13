@@ -7,6 +7,9 @@ import akka.contrib.persistence.mongodb.MongoPersistenceDriver.{Acknowledged, Jo
 import akka.stream.ActorMaterializer
 import com.mongodb.ConnectionString
 import com.typesafe.config.Config
+
+import org.mongodb.scala.bson.BsonDocument
+import org.mongodb.scala.model.Indexes._
 import org.mongodb.scala.{MongoClientSettings, _}
 import model.Indexes._
 import org.mongodb.scala.bson.{BsonBoolean, BsonDocument}
@@ -39,18 +42,18 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
     client.getDatabase(dbName)
   }
 
-  override private[mongodb] def collection(name: String): C =
+  override private[mongodb] def collection(name: String)(implicit ec: ExecutionContext): C =
     Future.successful(db.getCollection(name))
 
-  override private[mongodb] def ensureCollection(name: String): C = {
-    implicit val ec: ExecutionContext = system.dispatcher
-    db.listCollectionNames().toFuture().flatMap {
-      case xs if xs.contains(name) =>
-        collection(name)
-      case _ =>
-        db.createCollection(name).toFuture().flatMap(_ => collection(name))
-    }
-  }
+  override private[mongodb] def ensureCollection(name: String)(implicit ec: ExecutionContext): C =
+    ensureCollection(name, db.createCollection)
+
+  private[this] def ensureCollection(name: String, collectionCreator: String => SingleObservable[Completed])
+                                    (implicit ec: ExecutionContext): C =
+    for {
+      _ <- collectionCreator(name).toFuture().recover { case MongoErrors.NamespaceExists() => Completed }
+      mongoCollection <- collection(name)
+    } yield mongoCollection
 
   private[mongodb] def journalWriteConcern: WriteConcern = toWriteConcern(journalWriteSafety, journalWTimeout, journalFsync)
   private[mongodb] def snapsWriteConcern: WriteConcern = toWriteConcern(snapsWriteSafety, snapsWTimeout, snapsFsync)
@@ -63,37 +66,23 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
       case (ReplicaAcknowledged, w, f) => WriteConcern.MAJORITY.withWTimeout(w, TimeUnit.MILLISECONDS).withJournal(!f)
     }
 
-  override private[mongodb] def upgradeJournalIfNeeded: Unit = upgradeJournalIfNeeded("")
-
-  override private[mongodb] def upgradeJournalIfNeeded(persistenceId: String): Unit = {}
-
-  override private[mongodb] def upgradeSnapshotIfNeeded(): Unit = {
-    // TODO
-  }
-
   override private[mongodb] def cappedCollection(name: String)(implicit ec: ExecutionContext): C = {
-    def createCappedCollection(): C = {
-      val options = CreateCollectionOptions().capped(true).sizeInBytes(realtimeCollectionSize)
-      db.createCollection(name, options)
-        .toFuture()
-        .flatMap(_ => collection(name))
-    }
-
-    db.listCollections().filter(Document("name" -> name)).toFuture().flatMap { collections =>
-      val capped = collections.headOption
-        .flatMap(d => d.get("options"))
-        .collect{ case d: BsonDocument if d.containsKey("capped") => d.get("capped").asBoolean() }
-      if (capped.contains(BsonBoolean(true))) {
-        collection(name)
-      } else if (capped.isDefined) {
-        collection(name)
-          .flatMap(_.drop().toFuture())
-          .flatMap(_ => createCappedCollection())
-      } else {
-        createCappedCollection()
-      }
-    }
+    val cappedCollectionCreator = (ccName: String) =>
+      db.createCollection(ccName, new CreateCollectionOptions().capped(true).sizeInBytes(realtimeCollectionSize))
+    for {
+      collection <- ensureCollection(name, cappedCollectionCreator)
+      capped <- isCappedCollection(name)
+      cc <- if (capped) Future.successful(collection) else for {
+        _ <- collection.drop().toFuture()
+        recreatedCappedCollection <- ensureCollection(name, cappedCollectionCreator)
+      } yield recreatedCappedCollection
+    } yield cc
   }
+
+  private[this] def isCappedCollection(collectionName: String): Future[Boolean] =
+    db.runCommand(BsonDocument("collStats" -> collectionName))
+      .toFuture()
+      .map(stats => stats.get("capped").exists(_.asBoolean.getValue))
 
   private[mongodb] def getCollectionsAsFuture(collectionName: String)(implicit ec: ExecutionContext): Future[List[MongoCollection[D]]] = {
     getAllCollectionsAsFuture(Option(_.startsWith(collectionName)))

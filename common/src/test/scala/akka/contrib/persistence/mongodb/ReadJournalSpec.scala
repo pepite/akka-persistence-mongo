@@ -48,6 +48,7 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
   }
 
   def config(extensionClass: Class[_]): Config = ConfigFactory.parseString(s"""
+<<<<<<< HEAD
                                                                               |include "/application.conf"
                                                                               |akka.contrib.persistence.mongodb.mongo.driver = "${extensionClass.getName}"
                                                                               |akka.contrib.persistence.mongodb.mongo.mongouri = "mongodb://$host:$noAuthPort/$embedDB"
@@ -65,6 +66,32 @@ abstract class ReadJournalSpec[A <: MongoPersistenceExtension](extensionClass: C
                                                                               |  # Class name of the plugin.
                                                                               |  class = "akka.contrib.persistence.mongodb.MongoReadJournal"
                                                                               |}
+=======
+    |include "/application.conf"
+    |akka.contrib.persistence.mongodb.mongo {
+    |  driver = "${extensionClass.getName}"
+    |  mongouri = "mongodb://$host:$noAuthPort/$embedDB"
+    |  collection-cache {
+    |    // disable caching of journal and realtime collections - spec drops them between tests
+    |    journal.expire-after-write = -1s
+    |    realtime.expire-after-write = -1s
+    |  }
+    |}
+    |akka.persistence.journal.plugin = "akka-contrib-mongodb-persistence-journal"
+    |akka-contrib-mongodb-persistence-journal {
+    |    # Class name of the plugin.
+    |  class = "akka.contrib.persistence.mongodb.MongoJournal"
+    |}
+    |akka.persistence.snapshot-store.plugin = "akka-contrib-mongodb-persistence-snapshot"
+    |akka-contrib-mongodb-persistence-snapshot {
+    |    # Class name of the plugin.
+    |  class = "akka.contrib.persistence.mongodb.MongoSnapshots"
+    |}
+    |akka-contrib-mongodb-persistence-readjournal {
+    |  # Class name of the plugin.
+    |  class = "akka.contrib.persistence.mongodb.MongoReadJournal"
+    |}
+>>>>>>> 90ad042... Improve collection creation for long-running systems under high load (#225)
     $extendedConfig
                                                                               |""".stripMargin).withFallback(ConfigFactory.defaultReference()).resolve()
 

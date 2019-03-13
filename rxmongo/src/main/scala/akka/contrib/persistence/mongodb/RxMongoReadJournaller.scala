@@ -249,16 +249,16 @@ class RxMongoReadJournaller(driver: RxMongoDriver, m: Materializer) extends Mong
     stream
   }
 
-  override def currentAllEvents(implicit m: Materializer): Source[Event, NotUsed] =
+  override def currentAllEvents(implicit m: Materializer, ec: ExecutionContext): Source[Event, NotUsed] =
     CurrentAllEvents.source(driver)
 
-  override def currentPersistenceIds(implicit m: Materializer): Source[String, NotUsed] =
+  override def currentPersistenceIds(implicit m: Materializer, ec: ExecutionContext): Source[String, NotUsed] =
     CurrentPersistenceIds.source(driver)
 
-  override def currentEventsByPersistenceId(persistenceId: String, fromSeq: Long, toSeq: Long)(implicit m: Materializer): Source[Event, NotUsed] =
+  override def currentEventsByPersistenceId(persistenceId: String, fromSeq: Long, toSeq: Long)(implicit m: Materializer, ec: ExecutionContext): Source[Event, NotUsed] =
     CurrentEventsByPersistenceId.source(driver, persistenceId, fromSeq, toSeq)
 
-  override def currentEventsByTag(tag: String, offset: Offset)(implicit m: Materializer): Source[(Event, Offset), NotUsed] =
+  override def currentEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ec: ExecutionContext): Source[(Event, Offset), NotUsed] =
     CurrentEventsByTag.source(driver, tag, offset)
 
   override def checkOffsetIsSupported(offset: Offset): Boolean =
@@ -267,26 +267,25 @@ class RxMongoReadJournaller(driver: RxMongoDriver, m: Materializer) extends Mong
       case ObjectIdOffset(hexStr, _) => BSONObjectID.parse(hexStr).isSuccess
     }
 
-  override def liveEventsByPersistenceId(persistenceId: String)(implicit m: Materializer): Source[Event, NotUsed] = {
+  override def liveEventsByPersistenceId(persistenceId: String)(implicit m: Materializer, ec: ExecutionContext): Source[Event, NotUsed] = {
     journalStream.cursor(Option(BSONDocument(
       PROCESSOR_ID -> persistenceId
     )), None, None).mapConcat{ case(ev,_) => List(ev).filter(_.pid == persistenceId) }
   }
 
-  override def liveEvents(implicit m: Materializer): Source[Event, NotUsed] = {
+  override def liveEvents(implicit m: Materializer, ec: ExecutionContext): Source[Event, NotUsed] = {
     journalStream.cursor(None, None, None).map(_._1)
   }
 
-  override def livePersistenceIds(implicit m: Materializer): Source[String, NotUsed] = {
+  override def livePersistenceIds(implicit m: Materializer, ec: ExecutionContext): Source[String, NotUsed] = {
     journalStream.cursor(None, None, None).map{ case(ev,_) => ev.pid }
   }
 
-  override def liveEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ord: Ordering[Offset]): Source[(Event, Offset), NotUsed] = {
+  override def liveEventsByTag(tag: String, offset: Offset)(implicit m: Materializer, ec: ExecutionContext, ord: Ordering[Offset]): Source[(Event, Offset), NotUsed] = {
     val time = offset match {
-      case NoOffset => None
-      case ObjectIdOffset(hexStr, time) => Some(time)
+        case NoOffset => None
+            case ObjectIdOffset(hexStr, time) => Some(time)
     }
-
     journalStream.cursor(None, Some(tag), time).filter{ case(ev, off) => ev.tags.contains(tag) &&  ord.gt(off, offset)}
   }
 }
