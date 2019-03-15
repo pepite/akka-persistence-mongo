@@ -101,6 +101,13 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
 
   private[mongodb] def closeConnections(): Unit
 
+  private[mongodb] def upgradeJournalIfNeeded(): Unit
+
+  private[mongodb] def upgradeJournalIfNeeded(persistenceId: String): Unit
+
+  private[mongodb] def upgradeSnapshotIfNeeded(): Unit
+
+
   /**
    * retrieve suffix from persistenceId
    */
@@ -191,8 +198,14 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
   private[mongodb] val journalMap = TrieMap.empty[String, C]
 
   private[mongodb] def journal(persistenceId: String): C = {
+//    if (settings.JournalAutomaticUpgrade) {
+//      println("Journal automatic upgrade is enabled, executing upgrade process")
+//      upgradeJournalIfNeeded()
+//      upgradeSnapshotIfNeeded()
+//      println("Journal automatic upgrade process has completed")
+//    }
     val collectionName = getJournalCollectionName(persistenceId)
-    journalMap.getOrElseUpdate(collectionName, {
+    val j = journalMap.getOrElseUpdate(collectionName, {
       val journalCollection = ensureCollection(collectionName)
 
       indexes.foldLeft(journalCollection) { (acc, index) =>
@@ -201,6 +214,9 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
       }
       journalCollection
     })
+
+
+    j
   }
 
   private[mongodb] def removeJournalInCache(persistenceId:String) = {
@@ -230,11 +246,6 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config) {
 
   private[mongodb] lazy val realtime: C = {
     val realtimeCollection = cappedCollection(realtimeCollectionName)(concurrent.ExecutionContext.global)
-
-//    indexes.foldLeft(realtimeCollection) { (acc, index) =>
-//      import index._
-//      ensureIndex(name, unique, sparse, fields: _*)(concurrent.ExecutionContext.global)(acc)
-//    }
     realtimeCollection
   }
 

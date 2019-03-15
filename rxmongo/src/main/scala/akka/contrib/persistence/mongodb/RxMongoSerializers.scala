@@ -83,6 +83,7 @@ class RxMongoSerializers(dynamicAccess: DynamicAccess, actorSystem: ActorSystem)
       BSONDocument(PROCESSOR_ID -> snap.metadata.persistenceId,
         SEQUENCE_NUMBER -> snap.metadata.sequenceNr,
         TIMESTAMP -> snap.metadata.timestamp,
+        DATE -> BSONDateTime(snap.metadata.timestamp),
         V2.SERIALIZED -> content)
     }
 

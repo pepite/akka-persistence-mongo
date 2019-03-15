@@ -27,8 +27,10 @@ class MongoSnapshots(config: Config) extends SnapshotStore {
    * @param metadata snapshot metadata.
    * @param snapshot snapshot.
    */
-  override def saveAsync(metadata: SnapshotMetadata, snapshot: Any) = 
-    impl.saveSnapshot(SelectedSnapshot(metadata,snapshot))
+  override def saveAsync(metadata: SnapshotMetadata, snapshot: Any) = {
+    //println(s"saveAsync ${metadata} ${snapshot}")
+    impl.saveSnapshot(SelectedSnapshot(metadata, snapshot))
+  }
 
   /**
    * Plugin API: deletes the snapshot identified by `metadata`.
@@ -58,6 +60,7 @@ class MongoSnapshots(config: Config) extends SnapshotStore {
 
 trait SnapshottingFieldNames {
   final val PROCESSOR_ID = "pid"
+  final val DATE = "date"
   final val SEQUENCE_NUMBER = "sn"
   final val TIMESTAMP = "ts"
   object V1 {

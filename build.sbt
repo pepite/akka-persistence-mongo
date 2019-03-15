@@ -1,10 +1,10 @@
-val releaseV = "2.2.1"
+val releaseV = "2.2.3"
 
-val scalaV = "2.12.6"
+val scalaV = "2.12.8"
 
 scalaVersion := scalaV
 
-crossScalaVersions := Seq("2.11.8", "2.12.2")
+crossScalaVersions := Seq("2.11.8", "2.12.6")
 
 val AkkaV = "2.5.19"
 
@@ -116,8 +116,8 @@ lazy val `akka-persistence-mongo-rxmongo` = (project in file("rxmongo"))
         .exclude("com.typesafe.akka","akka-actor_2.11")
         .exclude("com.typesafe.akka","akka-actor_2.12")
     ),
-    crossScalaVersions := Seq("2.12.6"),
-    scalaVersion := "2.12.6"
+    crossScalaVersions := Seq("2.11.8", "2.12.6"),
+    scalaVersion := "2.12.8"
   )
   .configs(Travis)
 

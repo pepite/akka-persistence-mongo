@@ -63,6 +63,14 @@ class ScalaMongoDriver(system: ActorSystem, config: Config) extends MongoPersist
       case (ReplicaAcknowledged, w, f) => WriteConcern.MAJORITY.withWTimeout(w, TimeUnit.MILLISECONDS).withJournal(!f)
     }
 
+  override private[mongodb] def upgradeJournalIfNeeded: Unit = upgradeJournalIfNeeded("")
+
+  override private[mongodb] def upgradeJournalIfNeeded(persistenceId: String): Unit = {}
+
+  override private[mongodb] def upgradeSnapshotIfNeeded(): Unit = {
+    // TODO
+  }
+
   override private[mongodb] def cappedCollection(name: String)(implicit ec: ExecutionContext): C = {
     def createCappedCollection(): C = {
       val options = CreateCollectionOptions().capped(true).sizeInBytes(realtimeCollectionSize)

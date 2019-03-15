@@ -15,6 +15,7 @@ import com.typesafe.config.Config
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.language.reflectiveCalls
+import scala.util.Try
 
 object CasbahPersistenceDriver {
   import MongoPersistenceDriver._
@@ -49,6 +50,16 @@ class CasbahMongoDriver(system: ActorSystem, config: Config) extends MongoPersis
   private[mongodb] lazy val client = MongoClient(url)
 
   private[mongodb] lazy val db = client(databaseName.getOrElse(url.database.getOrElse(DEFAULT_DB_NAME)))
+
+  override private[mongodb] def upgradeJournalIfNeeded: Unit = upgradeJournalIfNeeded("")
+
+  override private[mongodb] def upgradeJournalIfNeeded(persistenceId: String): Unit = {
+    // TODO
+  }
+
+  override private[mongodb] def upgradeSnapshotIfNeeded(): Unit = {
+    // TODO
+  }
 
   private[mongodb] def collection(name: String) = db(name)
 

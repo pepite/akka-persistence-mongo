@@ -30,6 +30,7 @@ class RxMongoSnapshotter(driver: RxMongoDriver) extends MongoPersistenceSnapshot
   }
 
   private[mongodb] def saveSnapshot(snapshot: SelectedSnapshot)(implicit ec: ExecutionContext) = {
+    //println(s"saveSnapshot ${snapshot} pid [${snapshot.metadata.persistenceId}]")
     val query = BSONDocument(
       PROCESSOR_ID -> snapshot.metadata.persistenceId,
       SEQUENCE_NUMBER -> snapshot.metadata.sequenceNr,
@@ -77,15 +78,7 @@ class RxMongoSnapshotter(driver: RxMongoDriver) extends MongoPersistenceSnapshot
   }
 
   private[this] def snaps(suffix: String)(implicit ec: ExecutionContext) = {
-    val snaps = driver.getSnaps(suffix)
-    snaps.flatMap(_.indexesManager.ensure(Index(
-      key = Seq((PROCESSOR_ID, IndexType.Ascending),
-        (SEQUENCE_NUMBER, IndexType.Descending),
-        (TIMESTAMP, IndexType.Descending)),
-      background = true,
-      unique = true,
-      name = Some(driver.snapsIndexName))))
-    snaps
+    driver.snaps(suffix)
   }
 
 }
