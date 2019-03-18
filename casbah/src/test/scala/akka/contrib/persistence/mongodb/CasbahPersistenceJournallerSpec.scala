@@ -83,7 +83,7 @@ class CasbahPersistenceJournallerSpec extends TestKit(ActorSystem("unit-test")) 
 
       def serialize(ref:ActorRef,casbahSerializers: CasbahSerializers): DBObject ={
         val myPayload = Payload[com.mongodb.DBObject](ShardRegionTerminated(ref))(casbahSerializers.serialization,implicitly,casbahSerializers.dt,casbahSerializers.loader)
-        val ts = System.nanoTime()
+        val ts = System.currentTimeMillis()
         val repr = Atom(pid = "pid", ts, from = 1L, to = 1L, events = ISeq(Event(pid = "pid", sn = 1L, ts, payload = myPayload)))
         val serialized = serializeAtom(repr)
         serialized
@@ -120,7 +120,7 @@ class CasbahPersistenceJournallerSpec extends TestKit(ActorSystem("unit-test")) 
   "A mongo journal implementation" should "serialize and deserialize non-confirmable data" in {
     new Fixture {
 
-      val ts = System.nanoTime()
+      val ts = System.currentTimeMillis()
       val repr = Atom(pid = "pid", ts = ts, from = 1L, to = 1L, events = ISeq(Event(pid = "pid", sn = 1L, ts = ts, payload = "TEST")))
 
       val serialized = serializeAtom(repr)

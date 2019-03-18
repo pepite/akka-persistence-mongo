@@ -275,7 +275,7 @@ case class Atom(pid: String, ts: Long, from: Long, to: Long, events: ISeq[Event]
 
 object Atom {
   def apply[D](aw: AtomicWrite, useLegacySerialization: Boolean)(implicit ser: Serialization, ev: Manifest[D], dt: DocumentType[D], loadClass: LoadClass): Atom = {
-    val timestamp = System.nanoTime()
+    val timestamp = System.currentTimeMillis()
 
     Atom(pid = aw.persistenceId,
       ts = timestamp,
