@@ -11,9 +11,10 @@ import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.{Keep, Sink}
 import com.typesafe.config.{Config, ConfigFactory}
 import play.api.libs.iteratee._
-import reactivemongo.api._
+import reactivemongo.api.{DefaultDB, FailoverStrategy, MongoConnection, MongoDriver}
+import reactivemongo.api.commands.WriteConcern
 import reactivemongo.api.collections.bson.BSONCollection
-import reactivemongo.api.commands._
+import reactivemongo.api.commands.CommandError
 import reactivemongo.api.indexes.{Index, IndexType}
 import reactivemongo.bson._
 import reactivemongo.core.nodeset.Authenticate

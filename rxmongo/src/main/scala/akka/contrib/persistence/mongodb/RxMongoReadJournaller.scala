@@ -59,7 +59,7 @@ object CurrentPersistenceIds {
                             Out(nameWithIndex) ::
                             Nil,
                             batchSize = Option(1000)
-                          ).prepared[AkkaStreamCursor]
+                          ).prepared[AkkaStreamCursor.WithOps]
                             .cursor
                             .headOption
                             .map(_ => nameWithIndex)
