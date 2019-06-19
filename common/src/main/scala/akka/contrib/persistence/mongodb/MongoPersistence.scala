@@ -183,7 +183,7 @@ abstract class MongoPersistenceDriver(as: ActorSystem, config: Config)
     IndexSettings(journalSeqNrIndexName, unique = false, sparse = false, JournallingFieldNames.PROCESSOR_ID -> 1, TO -> -1),
     IndexSettings(journalTagIndexName, unique = false, sparse = true, JournallingFieldNames.TAGS -> 1),
     IndexSettings(journalTagIndexName + "_1", unique = false, sparse = true, JournallingFieldNames.TAGS -> 1, TS -> 1),
-    IndexSettings(journalTimestampIndexName, unique = true, sparse = false, JournallingFieldNames.TS -> 1),
+    IndexSettings(journalTimestampIndexName, unique = false, sparse = false, JournallingFieldNames.TS -> 1),
     IndexSettings(journalPIDIndexName, unique = false, sparse = false, JournallingFieldNames.PROCESSOR_ID -> 1)
   )
 
